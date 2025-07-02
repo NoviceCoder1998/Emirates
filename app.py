@@ -81,3 +81,132 @@ with open(page_path, "w") as f:
     f.write(viz_code)
 
 page_path
+
+# Code for the Classification tab (Streamlit page)
+classification_code = """
+import streamlit as st
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, roc_curve, auc
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+import seaborn as sns
+import matplotlib.pyplot as plt
+import plotly.graph_objs as go
+import io
+
+st.title("🤖 Classification Models")
+
+@st.cache_data
+def load_data():
+    return pd.read_csv("data/emirates_synthetic_survey_data.csv")
+
+df = load_data()
+
+# Preprocess
+df = df.dropna()
+df_model = df.copy()
+
+# Encode categorical columns
+label_encoders = {}
+for col in df_model.select_dtypes(include='object').columns:
+    le = LabelEncoder()
+    df_model[col] = le.fit_transform(df_model[col])
+    label_encoders[col] = le
+
+# Define features and target
+features = df_model.drop(columns=["Personalized App Improves Experience"])
+target = df_model["Personalized App Improves Experience"]
+
+# Binarize target for classification
+target = target.apply(lambda x: 1 if x == 1 else 0)
+
+X_train, X_test, y_train, y_test = train_test_split(features, target, test_size=0.2, random_state=42)
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+models = {
+    "K-Nearest Neighbors": KNeighborsClassifier(),
+    "Decision Tree": DecisionTreeClassifier(),
+    "Random Forest": RandomForestClassifier(),
+    "Gradient Boosting": GradientBoostingClassifier()
+}
+
+results = []
+
+st.subheader("🔍 Model Performance Summary")
+
+for name, model in models.items():
+    model.fit(X_train_scaled, y_train)
+    y_pred = model.predict(X_test_scaled)
+    results.append({
+        "Model": name,
+        "Accuracy": accuracy_score(y_test, y_pred),
+        "Precision": precision_score(y_test, y_pred),
+        "Recall": recall_score(y_test, y_pred),
+        "F1 Score": f1_score(y_test, y_pred)
+    })
+
+results_df = pd.DataFrame(results).round(3)
+st.dataframe(results_df)
+
+# Confusion matrix
+st.subheader("📊 Confusion Matrix")
+selected_model = st.selectbox("Select model to display confusion matrix", list(models.keys()))
+model_cm = models[selected_model]
+model_cm.fit(X_train_scaled, y_train)
+y_pred_cm = model_cm.predict(X_test_scaled)
+cm = confusion_matrix(y_test, y_pred_cm)
+
+fig_cm, ax_cm = plt.subplots()
+sns.heatmap(cm, annot=True, fmt='d', cmap="Blues", xticklabels=["Not Interested", "Interested"], yticklabels=["Not Interested", "Interested"])
+plt.xlabel("Predicted")
+plt.ylabel("Actual")
+st.pyplot(fig_cm)
+
+# ROC curve
+st.subheader("📈 ROC Curve")
+fig_roc = go.Figure()
+for name, model in models.items():
+    model.fit(X_train_scaled, y_train)
+    y_prob = model.predict_proba(X_test_scaled)[:, 1]
+    fpr, tpr, _ = roc_curve(y_test, y_prob)
+    fig_roc.add_trace(go.Scatter(x=fpr, y=tpr, mode='lines', name=name))
+fig_roc.add_trace(go.Scatter(x=[0, 1], y=[0, 1], line=dict(dash='dash'), name='Random'))
+fig_roc.update_layout(title="ROC Curve", xaxis_title="False Positive Rate", yaxis_title="True Positive Rate")
+st.plotly_chart(fig_roc)
+
+# Upload new data and predict
+st.subheader("📤 Upload Data for Prediction")
+uploaded_file = st.file_uploader("Upload CSV (same structure as original without target):", type="csv")
+if uploaded_file:
+    new_data = pd.read_csv(uploaded_file)
+    for col in new_data.select_dtypes(include='object').columns:
+        if col in label_encoders:
+            new_data[col] = label_encoders[col].transform(new_data[col].astype(str))
+    new_scaled = scaler.transform(new_data)
+    best_model = RandomForestClassifier()
+    best_model.fit(X_train_scaled, y_train)
+    predictions = best_model.predict(new_scaled)
+    output_df = new_data.copy()
+    output_df["Predicted Label"] = predictions
+
+    st.write("Prediction Results:")
+    st.dataframe(output_df.head())
+
+    buffer = io.StringIO()
+    output_df.to_csv(buffer, index=False)
+    buffer.seek(0)
+    st.download_button("📥 Download Predictions", buffer, file_name="predictions.csv", mime="text/csv")
+"""
+
+# Save classification code to pages directory
+classification_path = "/mnt/data/emirates_streamlit_dashboard/pages/2_Classification.py"
+with open(classification_path, "w") as f:
+    f.write(classification_code)
+
+classification_path
+
